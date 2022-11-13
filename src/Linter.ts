@@ -60,6 +60,7 @@ export class Linter implements CodeActionProvider {
       ruleId.indexOf("SPELLER_RULE") !== -1 ||
       ruleId.indexOf("HUNSPELL_NO_SUGGEST_RULE") !== -1 ||
       ruleId.indexOf("HUNSPELL_RULE") !== -1 ||
+      ruleId.indexOf("GERMAN_SPELLER_RULE") !== -1 ||
       ruleId.indexOf("FR_SPELLING_RULE") !== -1
     );
   }
@@ -104,12 +105,14 @@ export class Linter implements CodeActionProvider {
             document,
             diagnostic,
           );
-          if (spellingActions.length > 0) {
-            spellingActions.forEach((action) => {
-              actions.push(action);
-            });
-          }
-        } else {
+          spellingActions.forEach((action) => {
+            actions.push(action);
+          });
+        } else if (match) {
+          const word: string = document.getText(diagnostic.range);
+          this.addLocalFileIgnore(document, word, match, diagnostic).forEach((action: CodeAction) => {
+            actions.push(action);
+          });
           this.getRuleActions(document, diagnostic).forEach((action) => {
             actions.push(action);
           });
@@ -388,13 +391,13 @@ export class Linter implements CodeActionProvider {
         };
       }
       diagnostics.push(diagnostic);
+      const word = document.getText(diagnostic.range);
       if (
         Linter.isSpellingRule(match.rule.id) &&
-        this.configManager.isIgnoredWord(document.getText(diagnostic.range)) &&
-        this.configManager.showIgnoredWordHints()
+        this.configManager.isIgnoredWord(word) &&
+        this.configManager.showIgnoredWordHints() ||
+        this.checkIfLocalIgnored(ignored, match.rule.id, word)
       ) {
-        diagnostic.severity = DiagnosticSeverity.Hint;
-      } else if (this.checkIfIgnored(ignored, match.rule.id, document.getText(diagnostic.range))) {
         diagnostic.severity = DiagnosticSeverity.Hint;
       }
     });
@@ -406,10 +409,9 @@ export class Linter implements CodeActionProvider {
    *
    * @param ignored List of ignored element at this line
    * @param id The rule of the spelling problem for this match
-   * @param line The line number
    * @param text The text of the match
    */
-  checkIfIgnored(ignored: IIgnoreItem[], id: string, text: string): boolean {
+  checkIfLocalIgnored(ignored: IIgnoreItem[], id: string, text: string): boolean {
     if (ignored == null || ignored.length == 0) return false;
     let matchFound = false;
     ignored.forEach((item) => {
@@ -430,40 +432,8 @@ export class Linter implements CodeActionProvider {
     const match: ILanguageToolMatch | undefined = diagnostic.match;
     const word: string = document.getText(diagnostic.range);
     if (this.configManager.isIgnoredWord(word)) {
-      if (this.configManager.showIgnoredWordHints()) {
-        if (this.configManager.isGloballyIgnoredWord(word)) {
-          const actionTitle: string =
-            "Remove '" + word + "' from always ignored words.";
-          const action: CodeAction = new CodeAction(
-            actionTitle,
-            CodeActionKind.QuickFix,
-          );
-          action.command = {
-            arguments: [word],
-            command: "languagetoolLinter.removeGloballyIgnoredWord",
-            title: actionTitle,
-          };
-          action.diagnostics = [];
-          action.diagnostics.push(diagnostic);
-          actions.push(action);
-        }
-        if (this.configManager.isWorkspaceIgnoredWord(word)) {
-          const actionTitle: string =
-            "Remove '" + word + "' from Workspace ignored words.";
-          const action: CodeAction = new CodeAction(
-            actionTitle,
-            CodeActionKind.QuickFix,
-          );
-          action.command = {
-            arguments: [word],
-            command: "languagetoolLinter.removeWorkspaceIgnoredWord",
-            title: actionTitle,
-          };
-          action.diagnostics = [];
-          action.diagnostics.push(diagnostic);
-          actions.push(action);
-        }
-      }
+      this.handleAlreadyIgnoredWord(word, diagnostic).forEach(
+        (action: CodeAction) => actions.push(action));
     } else {
       const usrIgnoreActionTitle: string = "Always ignore '" + word + "'";
       const usrIgnoreAction: CodeAction = new CodeAction(
@@ -495,6 +465,9 @@ export class Linter implements CodeActionProvider {
         actions.push(wsIgnoreAction);
       }
       if (match) {
+        this.addLocalFileIgnore(document, word, match, diagnostic).forEach((action: CodeAction) => {
+          actions.push(action);
+        });
         this.getReplacementActions(
           document,
           diagnostic,
@@ -502,6 +475,63 @@ export class Linter implements CodeActionProvider {
         ).forEach((action: CodeAction) => {
           actions.push(action);
         });
+      }
+    }
+    return actions;
+  }
+
+  private addLocalFileIgnore(document: TextDocument, word: string, match: ILanguageToolMatch, diagnostic: LTDiagnostic): CodeAction[] {
+    const actions: CodeAction[] = [];
+    if (document.languageId == Constants.LANGUAGE_ID_MARKDOWN ||
+      document.languageId == Constants.LANGUAGE_ID_HTML) {
+      const title: string = "Ignore '" + word + "' at current occourence";
+      const wsIgnoreAction: CodeAction = new CodeAction(
+        title,
+        CodeActionKind.QuickFix
+      );
+      wsIgnoreAction.command = {
+        arguments: [word, match, diagnostic],
+        command: "languagetoolLinter.ignoreWordInline",
+        title: title,
+      };
+      wsIgnoreAction.diagnostics = [];
+      wsIgnoreAction.diagnostics.push(diagnostic);
+      actions.push(wsIgnoreAction);
+    }
+    return actions;
+  }
+
+  private handleAlreadyIgnoredWord(word: string, diagnostic: LTDiagnostic): CodeAction[] {
+    const actions: CodeAction[] = [];
+    if (this.configManager.showIgnoredWordHints()) {
+      if (this.configManager.isGloballyIgnoredWord(word)) {
+        const actionTitle: string = "Remove '" + word + "' from always ignored words.";
+        const action: CodeAction = new CodeAction(
+          actionTitle,
+          CodeActionKind.QuickFix
+        );
+        action.command = {
+          arguments: [word],
+          command: "languagetoolLinter.removeGloballyIgnoredWord",
+          title: actionTitle,
+        };
+        action.diagnostics = [];
+        action.diagnostics.push(diagnostic);
+        actions.push(action);
+      }
+      if (this.configManager.isWorkspaceIgnoredWord(word)) {
+        const actionTitle: string = "Remove '" + word + "' from Workspace ignored words.";
+        const action: CodeAction = new CodeAction(
+          actionTitle,
+          CodeActionKind.QuickFix
+        );
+        action.command = {
+          arguments: [word],
+          command: "languagetoolLinter.removeWorkspaceIgnoredWord",
+          title: actionTitle,
+        };
+        action.diagnostics = [];
+        action.diagnostics.push(diagnostic);
       }
     }
     return actions;
@@ -558,7 +588,7 @@ export class Linter implements CodeActionProvider {
     const line = start.line;
     const res = Array<IIgnoreItem>();
     this.ignoreList.forEach((item) => {
-      if (item.line == line || item.line == line -1) {
+      if (item.line == -1 || item.line == line || item.line == line - 1) {
         // all items of current or prev line
         res.push(item);
       }
@@ -574,19 +604,32 @@ export class Linter implements CodeActionProvider {
    */
   private buildIgnoreList(document: TextDocument): IIgnoreItem[] {
     const fullText = document.getText();
-    const matches = [...fullText.matchAll(new RegExp('@(LT-)?IGNORE:(?<id>[_A-Z0-9]+)(\\((?<word>[^)]+)\\))?@', "gm"))];
+    const matches = [
+      ...fullText.matchAll(
+        new RegExp(
+          "(LT-)?(?<scope>(FILE|LINE)-)?IGNORE:(?<id>[_A-Z0-9]+)(\\((?<word>[^)]+)\\))?@",
+          "gm",
+        ),
+      ),
+    ];
     if (matches.length == 0) return [];
     const res = Array<IIgnoreItem>();
     matches.forEach((match: RegExpMatchArray) => {
-      if (!match.groups) return;
-      const item: IIgnoreItem = {
-        line: document.positionAt(match.index as number).line,
-        ruleId: match.groups ? match.groups['id'] : '',
-        text: match.groups ? match.groups['word'] : undefined,
+      if (!match.groups) return; // no matches, should not happen
+
+      let line: number;
+      if (match.groups.scope && match.groups.scope === "FILE-") {
+        line = -1; // whole file
+      } else {
+        line = document.positionAt(match.index as number).line;
       }
+      const item: IIgnoreItem = {
+        line: line,
+        ruleId: match.groups.id,
+        text: match.groups.word,
+      };
       res.push(item);
     });
     return res;
   }
 }
-

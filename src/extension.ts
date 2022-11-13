@@ -23,6 +23,7 @@ import { FormattingProviderDashes } from "./FormattingProviderDashes";
 import { OnTypeFormattingDispatcher } from "./OnTypeFormattingDispatcher";
 import { FormattingProviderEllipses } from "./FormattingProviderEllipses";
 import { FormattingProviderQuotes } from "./FormattingProviderQuotes";
+import { ILanguageToolMatch } from "./Interfaces";
 
 // Wonder Twin Powers, Activate!
 export function activate(context: vscode.ExtensionContext): void {
@@ -158,6 +159,33 @@ export function activate(context: vscode.ExtensionContext): void {
   );
   context.subscriptions.push(ignoreWordInWorkspace);
 
+  const ignoreWordInLine = vscode.commands.registerTextEditorCommand('languagetoolLinter.ignoreWordInline',
+  (editor, _edit, ...args) => {
+    if (editor) {
+        const document = editor.document;
+        editor.edit(editBuilder => {
+          const wrd: string = args.shift();
+          const match: ILanguageToolMatch = args.shift();
+          const diag: vscode.Diagnostic = args.shift();
+          const currentLine = document.lineAt(diag.range.start.line);
+          let line = currentLine.text;
+          const command = buildCommand(wrd, match, false) + ' ';
+          const pos = line.match("@(LT-)?(LINE-)?IGNORE:[_A-Z0-9]+(\\(([^)]+)\\))?@");
+          if (pos && pos.index) {
+            // add to current list
+            const idx = pos.index;
+            line = [line.slice(0, idx), command, line.slice(idx)].join('');
+          }
+          else {
+            // add to the end
+            line += "<!-- " + command + "-->";
+          }
+          editBuilder.replace(currentLine.range, line);
+        }) // apply the (accumulated) replacement(s) (if multiple cursors/selections)
+    }
+  });
+  context.subscriptions.push(ignoreWordInLine);
+
   // Register "Remove Globally Ignored Word" TextEditorCommand
   const removeGloballyIgnoredWord = vscode.commands.registerTextEditorCommand(
     "languagetoolLinter.removeGloballyIgnoredWord",
@@ -243,3 +271,16 @@ export function activate(context: vscode.ExtensionContext): void {
 
 // eslint-disable-next-line @typescript-eslint/no-empty-function
 export function deactivate(): void {}
+
+/**
+ * Build an ignore string
+ *
+ * @param wrd matching string, if any
+ * @param match the given match
+ * @param isFile if true, a file ignore rule will be set
+ * @returns the ignore string
+ */
+function buildCommand(wrd: string, match: ILanguageToolMatch, isFile: boolean) {
+  return "@" + (isFile ? "FILE-" : "LINE-") + "IGNORE:" + match.rule.id + (wrd ? "(" + wrd + ")" : "") + "@";
+}
+
