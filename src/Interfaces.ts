@@ -74,13 +74,3 @@ export interface ILanguageToolReplacement {
   value: string;
   shortDescription: string;
 }
-
-// Interface to keep an ignore-statements
-export interface IIgnoreItem {
-  // source line
-  line: number;
-  // matching linter rule
-  ruleId: string;
-  // optional matching text
-  text?: string;
-}

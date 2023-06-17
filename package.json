@@ -2,7 +2,7 @@
   "name": "languagetool-linter",
   "displayName": "LanguageTool Linter",
   "description": "LanguageTool integration for VS Code.",
-  "version": "0.19.1",
+  "version": "0.19.2",
   "engines": {
     "vscode": "^1.57.0"
   },
@@ -68,6 +68,11 @@
         "command": "languagetoolLinter.smartFormatDocument",
         "title": "Smart Format Document",
         "category": "LanguageTool Linter"
+      },
+      {
+        "command": "languagetoolLinter.reloadConfigurationFiles",
+        "title": "Reload configuration files",
+        "category": "LanguageTool Linter"
       }
     ],
     "menus": {
@@ -85,6 +90,10 @@
         },
         {
           "command": "languagetoolLinter.smartFormatDocument",
+          "when": "editorLangId == markdown || editorLangId == html"
+        },
+        {
+          "command": "languagetoolLinter.reloadConfigurationFiles",
           "when": "editorLangId == markdown || editorLangId == html"
         }
       ],
@@ -439,6 +448,15 @@
           "default": [],
           "description": "Workspace list of words to ignore in spellcheck. This setting is ignored at the User (Global) level."
         },
+        "languageToolLinter.languageTool.configurationFiles": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "scope": "window",
+          "default": [],
+          "description": "List of files that contain configuration commands"
+        },
         "languageToolLinter.languageTool.ignoredWordHint": {
           "type": "boolean",
           "default": true,
@@ -500,10 +518,15 @@
   },
   "dependencies": {
     "annotatedtext-rehype": "^0.6.0",
-    "annotatedtext-remark": "^0.8.0",
     "execa": "^5.0.0",
+    "find-up": "^6.3.0",
     "glob": "^8.0.3",
     "node-fetch": "^2.6.7",
-    "portfinder": "^1.0.32"
+    "portfinder": "^1.0.32",
+    "remark-directive": "^2.0.1",
+    "remark-frontmatter": "^4.0.1",
+    "remark-gfm": "^3.0.1",
+    "remark-parse": "^10.0.1",
+    "unified": "^10.1.2"
   }
 }

@@ -15,6 +15,7 @@
  */
 
 import execa from "execa";
+import os from 'os';
 import * as glob from "glob";
 import * as path from "path";
 import * as portfinder from "portfinder";
@@ -40,6 +41,7 @@ export class ConfigurationManager implements Disposable {
   private managedPort: number | undefined;
   private process: execa.ExecaChildProcess | undefined;
   private serviceParameters: Map<string, string> = new Map();
+  public  reloadConfigurationFilesNeeded: boolean;
 
   // Constructor
   constructor() {
@@ -47,6 +49,7 @@ export class ConfigurationManager implements Disposable {
     this.serviceUrl = this.findServiceUrl(this.getServiceType());
     this.startManagedService();
     this.serviceParameters = this.buildServiceParameters();
+    this.reloadConfigurationFilesNeeded = false;
   }
 
   // Public instance methods
@@ -111,6 +114,12 @@ export class ConfigurationManager implements Disposable {
             commands.executeCommand("workbench.action.reloadWindow");
           }
         });
+    }
+
+    // reload configuration files
+    if (event.affectsConfiguration("languageToolLinter.reloadConfigurationFiles")) {
+      Constants.EXTENSION_OUTPUT_CHANNEL.appendLine("reloadConfigurationFilesNeeded -> true");
+      this.reloadConfigurationFilesNeeded = true;
     }
   }
 
@@ -552,5 +561,20 @@ export class ConfigurationManager implements Disposable {
     return this.getIgnoredWords(
       Constants.CONFIGURATION_WORKSPACE_IGNORED_WORDS,
     );
+  }
+
+  // get list of configuration files.
+  public getConfigurationFiles(): string[] {
+    const files = this.config.get(Constants.CONFIGURATION_WORKSPACE_CONFIGURATION_FILES) as string[];
+    const resolvedFiles: string[] = [];
+    const home = os.homedir()
+    files.forEach((file: string) => {
+      if (file.startsWith('~')) {
+        resolvedFiles.push(home + file.slice(1));
+        return;
+      }
+      resolvedFiles.push(file);
+    });
+    return resolvedFiles;
   }
 }

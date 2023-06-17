@@ -40,9 +40,7 @@ export function activate(context: vscode.ExtensionContext): void {
   context.subscriptions.push(configMan);
 
   context.subscriptions.push(Constants.EXTENSION_OUTPUT_CHANNEL);
-  Constants.EXTENSION_OUTPUT_CHANNEL.appendLine(
-    "LanguageTool Linter Activated!",
-  );
+  Constants.EXTENSION_OUTPUT_CHANNEL.appendLine("LanguageTool Linter Activated!");
 
   // Register onDidChangeconfiguration event
   context.subscriptions.push(
@@ -169,16 +167,17 @@ export function activate(context: vscode.ExtensionContext): void {
           const diag: vscode.Diagnostic = args.shift();
           const currentLine = document.lineAt(diag.range.start.line);
           let line = currentLine.text;
-          const command = buildCommand(wrd, match, false) + ' ';
-          const pos = line.match("@(LT-)?(LINE-)?IGNORE:[_A-Z0-9]+(\\(([^)]+)\\))?@");
+          const rule = buildCommand(wrd, match) + ' ';
+          const command = "languagetool-disable-line ";
+          const pos = line.match(command);
           if (pos && pos.index) {
             // add to current list
-            const idx = pos.index;
+            const idx = pos.index + command.length;
             line = [line.slice(0, idx), command, line.slice(idx)].join('');
           }
           else {
             // add to the end
-            line += "<!-- " + command + "-->";
+            line += "<!-- " + command + rule + "-->";
           }
           editBuilder.replace(currentLine.range, line);
         }) // apply the (accumulated) replacement(s) (if multiple cursors/selections)
@@ -223,6 +222,21 @@ export function activate(context: vscode.ExtensionContext): void {
     },
   );
   context.subscriptions.push(checkDocumentAsPlainText);
+
+  // Register 'reload configuration files'
+  const myConfigurationChangeEvent : vscode.ConfigurationChangeEvent = {
+    affectsConfiguration: function (section: string, _scope?: vscode.ConfigurationScope | undefined): boolean {
+      return section == "languageToolLinter.reloadConfigurationFiles";
+    }
+  }
+  const reloadConfigurationFiles = vscode.commands.registerTextEditorCommand(
+    "languagetoolLinter.reloadConfigurationFiles",
+    () => {
+      Constants.EXTENSION_OUTPUT_CHANNEL.appendLine("Reload configuration files triggered.");
+      configMan.reloadConfiguration(myConfigurationChangeEvent)
+    }
+  )
+  context.subscriptions.push(reloadConfigurationFiles);
 
   // Register "Clear LanguageTool Diagnostics" TextEditorCommand
   const clearDocumentDiagnostics = vscode.commands.registerTextEditorCommand(
@@ -280,7 +294,7 @@ export function deactivate(): void {}
  * @param isFile if true, a file ignore rule will be set
  * @returns the ignore string
  */
-function buildCommand(wrd: string, match: ILanguageToolMatch, isFile: boolean) {
-  return "@" + (isFile ? "FILE-" : "LINE-") + "IGNORE:" + match.rule.id + (wrd ? "(" + wrd + ")" : "") + "@";
+function buildCommand(wrd: string, match: ILanguageToolMatch) {
+  return match.rule.id + (wrd ? "(" + wrd + ")" : "");
 }
 

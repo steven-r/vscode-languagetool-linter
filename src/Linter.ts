@@ -15,8 +15,12 @@
  */
 
 import * as RehypeBuilder from "annotatedtext-rehype";
-import * as RemarkBuilder from "annotatedtext-remark";
+import * as RemarkBuilder from "./annotation-builder";
 import * as Fetch from "node-fetch";
+import fs from "fs";
+import os from "os";
+import path from "path";
+
 import {
   CancellationToken,
   CodeAction,
@@ -31,6 +35,7 @@ import {
   Range,
   TextDocument,
   Uri,
+  window,
   workspace,
   WorkspaceEdit,
 } from "vscode";
@@ -40,12 +45,12 @@ import { FormattingProviderDashes } from "./FormattingProviderDashes";
 import { FormattingProviderEllipses } from "./FormattingProviderEllipses";
 import { FormattingProviderQuotes } from "./FormattingProviderQuotes";
 import {
-  IIgnoreItem,
   ILanguageToolMatch,
   ILanguageToolReplacement,
   ILanguageToolResponse,
 } from "./Interfaces";
 import { IAnnotatedtext, IAnnotation } from "annotatedtext";
+import { findUpSync } from "find-up";
 
 class LTDiagnostic extends Diagnostic {
   match?: ILanguageToolMatch;
@@ -71,7 +76,17 @@ export class Linter implements CodeActionProvider {
 
   private readonly configManager: ConfigurationManager;
   private timeoutMap: Map<string, NodeJS.Timeout>;
-  private ignoreList: IIgnoreItem[] = [];
+  private enabledDisabledRules: Record<string, boolean> = {};
+  private enabledDisabledRulesPerLine: Record<number, Record<string, boolean>> =
+    {};
+  private globalEnabledDisabledRules: Record<string, boolean> = {};
+
+  // Regular expression for matching the start of inline disable/enable comments (from https://github.com/DavidAnson/markdownlint/blob/main/helpers/helpers.js)
+  private inlineCommentStartRe =
+    /(<!--\s*languagetool-(disable-file|enable-file|disable-line|disable-next-line|configure-file))(?:\s|-->)/gi;
+  private configFileStartRe =
+    /^\s*(languagetool-)?(?<command>disable|enable)(?<parameter>(\s+([A-Z_0-9]+)(\([^)]+\))?)+)/gi;
+  private inlineCommentRuleRe = /\s*([A-Z_0-9]+)(\((.+?)\))?/gi;
 
   constructor(configManager: ConfigurationManager) {
     this.configManager = configManager;
@@ -80,6 +95,8 @@ export class Linter implements CodeActionProvider {
       Constants.EXTENSION_DISPLAY_NAME,
     );
     this.remarkBuilderOptions.interpretmarkup = this.customMarkdownInterpreter;
+    this.readConfigurationFiles(configManager.getConfigurationFiles());
+    this.globalEnabledDisabledRules = this.enabledDisabledRules;
   }
 
   // Provide CodeActions for thw given Document and Range
@@ -110,9 +127,11 @@ export class Linter implements CodeActionProvider {
           });
         } else if (match) {
           const word: string = document.getText(diagnostic.range);
-          this.addLocalFileIgnore(document, word, match, diagnostic).forEach((action: CodeAction) => {
-            actions.push(action);
-          });
+          this.addLocalFileIgnore(document, word, match, diagnostic).forEach(
+            (action: CodeAction) => {
+              actions.push(action);
+            },
+          );
           this.getRuleActions(document, diagnostic).forEach((action) => {
             actions.push(action);
           });
@@ -213,7 +232,6 @@ export class Linter implements CodeActionProvider {
   public lintDocument(document: TextDocument): void {
     if (this.configManager.isSupportedDocument(document)) {
       if (document.languageId === Constants.LANGUAGE_ID_MARKDOWN) {
-        this.ignoreList = this.buildIgnoreList(document);
         const annotatedMarkdown: string = JSON.stringify(
           this.buildAnnotatedMarkdown(document.getText()),
         );
@@ -364,11 +382,12 @@ export class Linter implements CodeActionProvider {
   ): void {
     const matches = response.matches;
     const diagnostics: LTDiagnostic[] = [];
+    this.buildRuleList(document);
     matches.forEach((match: ILanguageToolMatch) => {
       const start: Position = document.positionAt(match.offset);
       const end: Position = document.positionAt(match.offset + match.length);
-      const ignored: IIgnoreItem[] = this.getIgnoreList(document, start);
-      const diagnosticSeverity: DiagnosticSeverity = this.configManager.getDiagnosticSeverity();
+      const diagnosticSeverity: DiagnosticSeverity =
+        this.configManager.getDiagnosticSeverity();
       const diagnosticRange: Range = new Range(start, end);
       const diagnosticMessage: string = match.message;
       const diagnostic: LTDiagnostic = new LTDiagnostic(
@@ -393,34 +412,15 @@ export class Linter implements CodeActionProvider {
       diagnostics.push(diagnostic);
       const word = document.getText(diagnostic.range);
       if (
-        Linter.isSpellingRule(match.rule.id) &&
-        this.configManager.isIgnoredWord(word) &&
-        this.configManager.showIgnoredWordHints() ||
-        this.checkIfLocalIgnored(ignored, match.rule.id, word)
+        (Linter.isSpellingRule(match.rule.id) &&
+          this.configManager.isIgnoredWord(word) &&
+          this.configManager.showIgnoredWordHints()) ||
+        this.checkIfRuleIsIgnored(match.rule.id, word, start)
       ) {
         diagnostic.severity = DiagnosticSeverity.Hint;
       }
     });
     this.diagnosticCollection.set(document.uri, diagnostics);
-  }
-
-  /**
-   * Check if this particular rule is ignored for this line
-   *
-   * @param ignored List of ignored element at this line
-   * @param id The rule of the spelling problem for this match
-   * @param text The text of the match
-   */
-  checkIfLocalIgnored(ignored: IIgnoreItem[], id: string, text: string): boolean {
-    if (ignored == null || ignored.length == 0) return false;
-    let matchFound = false;
-    ignored.forEach((item) => {
-      if (matchFound) return;
-      if (item.ruleId == id && (!item.text || item.text == text)) {
-        matchFound = true;
-      }
-    });
-    return matchFound;
   }
 
   // Get CodeActions for Spelling Rules
@@ -433,7 +433,8 @@ export class Linter implements CodeActionProvider {
     const word: string = document.getText(diagnostic.range);
     if (this.configManager.isIgnoredWord(word)) {
       this.handleAlreadyIgnoredWord(word, diagnostic).forEach(
-        (action: CodeAction) => actions.push(action));
+        (action: CodeAction) => actions.push(action),
+      );
     } else {
       const usrIgnoreActionTitle: string = "Always ignore '" + word + "'";
       const usrIgnoreAction: CodeAction = new CodeAction(
@@ -465,9 +466,11 @@ export class Linter implements CodeActionProvider {
         actions.push(wsIgnoreAction);
       }
       if (match) {
-        this.addLocalFileIgnore(document, word, match, diagnostic).forEach((action: CodeAction) => {
-          actions.push(action);
-        });
+        this.addLocalFileIgnore(document, word, match, diagnostic).forEach(
+          (action: CodeAction) => {
+            actions.push(action);
+          },
+        );
         this.getReplacementActions(
           document,
           diagnostic,
@@ -480,14 +483,21 @@ export class Linter implements CodeActionProvider {
     return actions;
   }
 
-  private addLocalFileIgnore(document: TextDocument, word: string, match: ILanguageToolMatch, diagnostic: LTDiagnostic): CodeAction[] {
+  private addLocalFileIgnore(
+    document: TextDocument,
+    word: string,
+    match: ILanguageToolMatch,
+    diagnostic: LTDiagnostic,
+  ): CodeAction[] {
     const actions: CodeAction[] = [];
-    if (document.languageId == Constants.LANGUAGE_ID_MARKDOWN ||
-      document.languageId == Constants.LANGUAGE_ID_HTML) {
+    if (
+      document.languageId == Constants.LANGUAGE_ID_MARKDOWN ||
+      document.languageId == Constants.LANGUAGE_ID_HTML
+    ) {
       const title: string = "Ignore '" + word + "' at current occourence";
       const wsIgnoreAction: CodeAction = new CodeAction(
         title,
-        CodeActionKind.QuickFix
+        CodeActionKind.QuickFix,
       );
       wsIgnoreAction.command = {
         arguments: [word, match, diagnostic],
@@ -501,14 +511,18 @@ export class Linter implements CodeActionProvider {
     return actions;
   }
 
-  private handleAlreadyIgnoredWord(word: string, diagnostic: LTDiagnostic): CodeAction[] {
+  private handleAlreadyIgnoredWord(
+    word: string,
+    diagnostic: LTDiagnostic,
+  ): CodeAction[] {
     const actions: CodeAction[] = [];
     if (this.configManager.showIgnoredWordHints()) {
       if (this.configManager.isGloballyIgnoredWord(word)) {
-        const actionTitle: string = "Remove '" + word + "' from always ignored words.";
+        const actionTitle: string =
+          "Remove '" + word + "' from always ignored words.";
         const action: CodeAction = new CodeAction(
           actionTitle,
-          CodeActionKind.QuickFix
+          CodeActionKind.QuickFix,
         );
         action.command = {
           arguments: [word],
@@ -520,10 +534,11 @@ export class Linter implements CodeActionProvider {
         actions.push(action);
       }
       if (this.configManager.isWorkspaceIgnoredWord(word)) {
-        const actionTitle: string = "Remove '" + word + "' from Workspace ignored words.";
+        const actionTitle: string =
+          "Remove '" + word + "' from Workspace ignored words.";
         const action: CodeAction = new CodeAction(
           actionTitle,
-          CodeActionKind.QuickFix
+          CodeActionKind.QuickFix,
         );
         action.command = {
           arguments: [word],
@@ -579,57 +594,195 @@ export class Linter implements CodeActionProvider {
     return actions;
   }
 
-  /**
-   * Get list of ignored elements for this position (current or previous line)
-   * @param document The document to scan for
-   * @param start
-   */
-  private getIgnoreList(document: TextDocument, start: Position): IIgnoreItem[] {
-    const line = start.line;
-    const res = Array<IIgnoreItem>();
-    this.ignoreList.forEach((item) => {
-      if (item.line == -1 || item.line == line || item.line == line - 1) {
-        // all items of current or prev line
-        res.push(item);
+  private readConfigurationFiles(files: string[]) {
+    files.forEach((filename: string) => {
+      filename = path.resolve(filename); // resolve ~ and relative paths
+      if (!fs.existsSync(filename)) {
+        Constants.EXTENSION_OUTPUT_CHANNEL.appendLine(
+          `Rule-file ${filename} not found.`,
+        );
+        return;
       }
+      this.handleConfigureFile(filename);
     });
-    return res;
   }
 
-  /**
-   * Build up a list of ignore items for the whole file to be linted
-   *
-   * @param document The TextDocument to analyze
-   * @returns a list of IIgnoreItems for each found ignore element
-   */
-  private buildIgnoreList(document: TextDocument): IIgnoreItem[] {
-    const fullText = document.getText();
-    const matches = [
-      ...fullText.matchAll(
-        new RegExp(
-          "(LT-)?(?<scope>(FILE|LINE)-)?IGNORE:(?<id>[_A-Z0-9]+)(\\((?<word>[^)]+)\\))?@",
-          "gm",
-        ),
-      ),
-    ];
-    if (matches.length == 0) return [];
-    const res = Array<IIgnoreItem>();
-    matches.forEach((match: RegExpMatchArray) => {
-      if (!match.groups) return; // no matches, should not happen
+  private checkIfRuleIsIgnored(rule: string, token: string, point: Position) {
+    const key = rule;
+    let key2 = key;
+    if (token) {
+      key2 = key2 + `(${token})`;
+    }
+    let result = this.isEnabled(key2, point);
+    if (result == undefined) {
+      result = this.isEnabled(key, point, false);
+    }
+    return !result;
+  }
 
-      let line: number;
-      if (match.groups.scope && match.groups.scope === "FILE-") {
-        line = -1; // whole file
-      } else {
-        line = document.positionAt(match.index as number).line;
+  private isEnabled(
+    key: string,
+    point: Position,
+    returnUndefinedOnMiss = true,
+  ): boolean | undefined {
+    let data: boolean | undefined = this.enabledDisabledRules[key];
+    if (data === undefined) {
+      data = this.enabledDisabledRulesPerLine[point.line]
+        ? this.enabledDisabledRulesPerLine[point.line][key]
+        : undefined;
+    }
+    if (returnUndefinedOnMiss) {
+      return data;
+    }
+    return data === undefined ? true : data;
+  }
+
+  private commandMap: Record<string, string> = {
+    "ENABLE-FILE": "FILE",
+    "DISABLE-FILE": "FILE",
+    "DISABLE-LINE": "LINE",
+    "ENABLE-LINE": "LINE",
+    "DISABLE-NEXT-LINE": "LINE",
+    "ENABLE-NEXT-LINE": "LINE",
+    "CONFIGURE-FILE": "CONFIG",
+  };
+
+  private applyEnableDisable(
+    parameter: string,
+    enabled: boolean,
+    state: Record<string, boolean>,
+  ) {
+    state = { ...state };
+    const trimmed = parameter && parameter.trim();
+
+    let match: RegExpExecArray | null;
+    while ((match = this.inlineCommentRuleRe.exec(trimmed))) {
+      let key = match[1].toUpperCase();
+      if (match[2]) {
+        key = key + match[2];
       }
-      const item: IIgnoreItem = {
-        line: line,
-        ruleId: match.groups.id,
-        text: match.groups.word,
-      };
-      res.push(item);
+      state[key] = enabled;
+    }
+    return state;
+  }
+
+  private buildRuleList(document: TextDocument): void {
+    const lines = document.getText().split("\n");
+    let lineIndex = 0;
+    if (this.configManager.reloadConfigurationFilesNeeded) {
+      Constants.EXTENSION_OUTPUT_CHANNEL.appendLine("reloadConfigurationFiles()");
+      this.enabledDisabledRules = {}; // clear current settings
+      this.readConfigurationFiles(this.configManager.getConfigurationFiles());
+      this.globalEnabledDisabledRules = this.enabledDisabledRules;
+      this.configManager.reloadConfigurationFilesNeeded = false;
+    }
+    this.enabledDisabledRules = this.globalEnabledDisabledRules; // reset
+    this.enabledDisabledRulesPerLine = {};
+    lines.forEach((line) => {
+      let match: RegExpExecArray | null;
+      while ((match = this.inlineCommentStartRe.exec(line))) {
+        const action = match[2].toUpperCase();
+        const startIndex = match.index + match[1].length;
+        const endIndex = line.indexOf("-->", startIndex);
+        if (endIndex === -1) {
+          break;
+        }
+        const parameter = line.slice(startIndex, endIndex);
+        const cmd = this.commandMap[action];
+        if (cmd) {
+          switch (cmd) {
+            case "FILE":
+              this.handleEnableDisableFile(action, parameter);
+              break;
+            case "LINE":
+              this.handleEnableDisableLine(action, parameter, lineIndex);
+              break;
+            case "CONFIG":
+              this.handleConfigureFile(parameter);
+              break;
+          }
+        }
+      }
+      lineIndex++;
     });
-    return res;
+    Constants.EXTENSION_OUTPUT_CHANNEL.appendLine(`buildRuleList --> ${Object.keys(this.enabledDisabledRules).length}/${Object.keys(this.enabledDisabledRulesPerLine).length} rules.`);
+
+  }
+
+  private handleEnableDisableFile(action: string, parameter: string) {
+    const enabled = action === "ENABLE-FILE";
+    this.enabledDisabledRules = this.applyEnableDisable(
+      parameter,
+      enabled,
+      this.enabledDisabledRules,
+    );
+  }
+
+  private getCwdFromDocument() {
+    if (workspace.workspaceFolders !== undefined) {
+      const wf = workspace.workspaceFolders[0].uri.path;
+      return wf;
+    } else {
+      const message =
+        "YOUR-EXTENSION: Working folder not found, open a folder an try again";
+
+      window.showErrorMessage(message);
+      return null;
+    }
+  }
+
+  private handleConfigureFile(parameter: string) {
+    const files = parameter.split(/\s+/);
+    const folder = this.getCwdFromDocument() || os.homedir();
+    files.forEach((file: string) => {
+      if (!file) return;
+      const configFile = findUpSync(file, { cwd: folder });
+      if (configFile) {
+        Constants.EXTENSION_OUTPUT_CHANNEL.appendLine(
+          `Reading configuration file ${configFile}`,
+        );
+        this.loadSingleConfigFile(configFile)
+      } else {
+        Constants.EXTENSION_OUTPUT_CHANNEL.appendLine(
+          `Configuration file ${configFile} not found`,
+        );
+      }
+    });
+  }
+
+  private loadSingleConfigFile(configFile: string) {
+    const content = fs.readFileSync(configFile, { encoding: "utf8" });
+    const lines = content.split("\n");
+    const countbefore = Object.keys(this.enabledDisabledRules).length;
+    lines.forEach((line: string) => {
+      if (/^#/.test(line)) return;
+      let match: RegExpExecArray | null;
+      while ((match = this.configFileStartRe.exec(line))) {
+        if (match.groups) {
+          const enabled = match.groups.command.toUpperCase() === "ENABLE";
+          this.enabledDisabledRules = this.applyEnableDisable(
+            match.groups.parameter,
+            enabled,
+            this.enabledDisabledRules,
+          );
+        }
+      }
+    });
+    const countafter = Object.keys(this.enabledDisabledRules).length;
+    Constants.EXTENSION_OUTPUT_CHANNEL.appendLine(`Loaded ${countafter - countbefore} items`);
+  }
+
+  private handleEnableDisableLine(
+    action: string,
+    parameter: string,
+    lineIndex: number,
+  ) {
+    const enabled = action === "ENABLE-LINE" || action === "ENABLE-NEXT-LINE";
+    const lineno = lineIndex + (action.indexOf("-NEXT-LINE") > 0 ? 1 : 0);
+    this.enabledDisabledRulesPerLine[lineno] = this.applyEnableDisable(
+      parameter,
+      enabled,
+      this.enabledDisabledRulesPerLine[lineno] ?? {},
+    );
   }
 }
