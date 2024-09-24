@@ -42,6 +42,7 @@ export class ConfigurationManager implements Disposable {
   private process: execa.ExecaChildProcess | undefined;
   private serviceParameters: Map<string, string> = new Map();
   public  reloadConfigurationFilesNeeded: boolean;
+  private lintingSuspended: boolean = false;
 
   // Constructor
   constructor() {
@@ -123,6 +124,17 @@ export class ConfigurationManager implements Disposable {
     }
   }
 
+  // Suspend linting temporarily
+  public toggleSuspendLinting(): boolean {
+    this.lintingSuspended = !this.lintingSuspended;
+    return this.lintingSuspended;
+  }
+
+  // Is linting suspended?
+  public isLintingSuspended(): boolean {
+    return this.lintingSuspended;
+  }
+
   // Smart Format on Type
   public isSmartFormatOnType(): boolean {
     return this.config.get("smartFormat.onType") as boolean;
@@ -139,16 +151,7 @@ export class ConfigurationManager implements Disposable {
       document.uri.scheme === Constants.SCHEME_FILE ||
       document.uri.scheme === Constants.SCHEME_UNTITLED
     ) {
-      if (
-        this.isPlainTextId(document.languageId) &&
-        this.isPlainTextEnabled()
-      ) {
-        return true;
-      } else {
-        return Constants.CONFIGURATION_DOCUMENT_LANGUAGE_IDS.includes(
-          document.languageId,
-        );
-      }
+      return this.getLanguageIds().includes(document.languageId);
     }
     return false;
   }
@@ -221,6 +224,19 @@ export class ConfigurationManager implements Disposable {
     }
   }
 
+  // Get a list of current enabled language Ids
+  public getLanguageIds(): string[] {
+    const languageIds: string[] = Constants.SUPPORTED_LANGUAGE_IDS;
+    if (this.isPlainTextEnabled()) {
+      const plainTextLanguageIds: string[] =
+        this.config.get(Constants.CONFIGURATION_PLAIN_TEXT_IDS) || [];
+      plainTextLanguageIds.forEach((id) => {
+        languageIds.push(id);
+      });
+    }
+    return languageIds;
+  }
+
   public getUrl(): string | undefined {
     return this.serviceUrl;
   }
@@ -234,15 +250,21 @@ export class ConfigurationManager implements Disposable {
   }
 
   public isLintOnChange(): boolean {
-    return this.config.get("lintOnChange") as boolean;
+    return (
+      !this.isLintingSuspended() && (this.config.get("lintOnChange") as boolean)
+    );
   }
 
   public isLintOnOpen(): boolean {
-    return this.config.get("lintOnOpen") as boolean;
+    return (
+      !this.isLintingSuspended() && (this.config.get("lintOnOpen") as boolean)
+    );
   }
 
   public isLintOnSave(): boolean {
-    return this.config.get("lintOnSave") as boolean;
+    return (
+      !this.isLintingSuspended() && (this.config.get("lintOnSave") as boolean)
+    );
   }
 
   public getDiagnosticSeverity(): DiagnosticSeverity {
@@ -259,6 +281,14 @@ export class ConfigurationManager implements Disposable {
       );
       return DiagnosticSeverity.Warning;
     }
+  }
+
+  public getDiagnosticSeverityAuto(): boolean {
+    const severityAuto = this.config.get("diagnosticSeverityAuto");
+    if (severityAuto === true) {
+      return true;
+    }
+    return false;
   }
 
   public getClassPath(): string {
@@ -398,8 +428,20 @@ export class ConfigurationManager implements Disposable {
       if (value) {
         parameters.set(ltKey, value);
         Constants.EXTENSION_OUTPUT_CHANNEL.appendLine(ltKey + ": " + value);
+      } else {
+        Constants.EXTENSION_OUTPUT_CHANNEL.appendLine(ltKey + ": --");
       }
     });
+    // Only add user name and API key to options if set and we are using the
+    // external API
+    if (this.getServiceType() === Constants.SERVICE_TYPE_EXTERNAL) {
+      const username = this.get("external.username");
+      const apiKey = this.get("external.apiKey");
+      if (username && apiKey) {
+        parameters.set("username", username);
+        parameters.set("apiKey", apiKey);
+      }
+    }
     // Make sure disabled rules and disabled categories do not contain spaces
     const CONFIG_DISABLED_RULES = "languageTool.disabledRules";
     const CONFIG_DISABLED_CATEGORIES = "languageTool.disabledCategories";
@@ -501,11 +543,11 @@ export class ConfigurationManager implements Disposable {
                   }
                 },
               );
-              this.process.stderr!.addListener("data", (data) => {
+              this.process.stderr?.addListener("data", (data) => {
                 Constants.EXTENSION_OUTPUT_CHANNEL.appendLine(data);
                 Constants.EXTENSION_OUTPUT_CHANNEL.show(true);
               });
-              this.process.stdout!.addListener("data", (data) => {
+              this.process.stdout?.addListener("data", (data) => {
                 Constants.EXTENSION_OUTPUT_CHANNEL.appendLine(data);
               });
               this.serviceUrl = this.findServiceUrl(this.getServiceType());
@@ -560,6 +602,63 @@ export class ConfigurationManager implements Disposable {
   private getWorkspaceIgnoredWords(): Set<string> {
     return this.getIgnoredWords(
       Constants.CONFIGURATION_WORKSPACE_IGNORED_WORDS,
+    );
+  }
+
+  public disableRule(
+    ruleId: string,
+    configurationTarget: ConfigurationTarget,
+  ): void {
+    const disabledRules: string | undefined = this.config.get<string>(
+      Constants.CONFIGURATION_DISABLED_RULES,
+    );
+    let rulesString: string = ruleId;
+    if (disabledRules) {
+      const rules: Set<string> = new Set<string>(disabledRules.split(","));
+      if (!rules.has(ruleId)) {
+        rules.add(ruleId);
+      }
+      rulesString = Array.from(rules)
+        .map((rule) => rule.toUpperCase())
+        .sort()
+        .join(",");
+      this.config.update(
+        Constants.CONFIGURATION_DISABLED_RULES,
+        rulesString,
+        configurationTarget,
+      );
+    }
+    this.config.update(
+      Constants.CONFIGURATION_DISABLED_RULES,
+      rulesString,
+      configurationTarget,
+    );
+  }
+
+  public disableCategory(
+    categoryId: string,
+    configurationTarget: ConfigurationTarget,
+  ): void {
+    const disabledCategories: string | undefined = this.config.get<string>(
+      Constants.CONFIGURATION_DISABLED_CATEGORIES,
+    );
+    let categoriesString: string = categoryId;
+    if (disabledCategories) {
+      const categories: Set<string> = new Set<string>(
+        disabledCategories.split(","),
+      );
+      if (!categories.has(categoryId)) {
+        categories.add(categoryId);
+      }
+      categoriesString = Array.from(categories)
+        .map((rule) => rule.toUpperCase())
+        .sort()
+        .join(",");
+    }
+    this.config.update(
+      Constants.CONFIGURATION_DISABLED_CATEGORIES,
+      categoriesString,
+      configurationTarget,
     );
   }
 

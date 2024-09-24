@@ -2,6 +2,7 @@ import * as assert from "assert";
 // tslint:disable-next-line: no-implicit-dependencies
 import { before } from "mocha";
 import * as vscode from "vscode";
+import * as Constants from "../../src/Constants";
 
 suite("Extension Test Suite", () => {
   before(() => {
@@ -14,11 +15,8 @@ suite("Extension Test Suite", () => {
 
   test("Extension should activate", function () {
     this.timeout(60000);
-    const ext:
-      | vscode.Extension<unknown>
-      | undefined = vscode.extensions.getExtension(
-      "davidlday.languagetool-linter",
-    );
+    const ext: vscode.Extension<unknown> | undefined =
+      vscode.extensions.getExtension("davidlday.languagetool-linter");
     if (ext) {
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
       ext.activate().then((api: unknown) => {
@@ -31,26 +29,19 @@ suite("Extension Test Suite", () => {
 
   test("Extension should register all commands", () => {
     return vscode.commands.getCommands(true).then((commands) => {
-      const EXPECTED_COMMANDS: string[] = [
-        "languagetoolLinter.checkDocument",
-        "languagetoolLinter.checkDocumentAsPlainText",
-        "languagetoolLinter.clearDocumentDiagnostics",
-        "languagetoolLinter.smartFormatDocument",
-        "languagetoolLinter.ignoreWordGlobally",
-        "languagetoolLinter.ignoreWordInWorkspace",
-        "languagetoolLinter.removeGloballyIgnoredWord",
-        "languagetoolLinter.removeWorkspaceIgnoredWord",
-      ];
       const FOUND_COMMANDS = commands.filter((value) => {
         return (
-          EXPECTED_COMMANDS.indexOf(value) >= 0 ||
+          Constants.COMMAND_STRINGS.indexOf(value) >= 0 ||
           value.startsWith("languagetoolLinter.")
         );
       });
+      const MISSING_COMMANDS = Constants.COMMAND_STRINGS.filter(
+        (item) => FOUND_COMMANDS.indexOf(item) < 0,
+      );
       assert.equal(
         FOUND_COMMANDS.length,
-        EXPECTED_COMMANDS.length,
-        "Either not all commands are registered or new commands have not been added to this test.",
+        Constants.COMMAND_STRINGS.length,
+        `The following commands were not found: ${MISSING_COMMANDS}`,
       );
     });
   });

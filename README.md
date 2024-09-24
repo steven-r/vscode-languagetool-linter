@@ -1,6 +1,6 @@
 # LanguageTool Linter for Visual Studio Code
 
-[![GitHub Workflow Status](https://img.shields.io/github/workflow/status/davidlday/vscode-languagetool-linter/Node.js%20CI)](https://github.com/davidlday/vscode-languagetool-linter/actions)
+[![GitHub Workflow Status (with event)](https://img.shields.io/github/actions/workflow/status/davidlday/vscode-languagetool-linter/nodejs-ci.yml)](https://github.com/davidlday/vscode-languagetool-linter/actions/workflows/nodejs-ci.yml)
 [![Visual Studio Marketplace Installs](https://img.shields.io/visual-studio-marketplace/i/davidlday.languagetool-linter?logo=visual-studio-code)](https://marketplace.visualstudio.com/items?itemName=davidlday.languagetool-linter)
 [![Visual Studio Marketplace Rating (Stars)](https://img.shields.io/visual-studio-marketplace/stars/davidlday.languagetool-linter?logo=visual-studio-code)](https://marketplace.visualstudio.com/items?itemName=davidlday.languagetool-linter)
 
@@ -28,7 +28,7 @@ extension.
 
 The defaults are probably not going to work for you, but they are there to make
 sure using
-[LanguageTool's Public API](http://wiki.languagetool.org/public-http-api) is
+[LanguageTool's Public API](https://dev.languagetool.org/public-http-api) is
 done by choice. See
 [this issue](https://github.com/wysiib/linter-languagetool/issues/33) on the
 [Atom LanguageTool Linter](https://atom.io/packages/linter-languagetool) for an
@@ -37,9 +37,9 @@ explanation why.
 The defaults assume the following:
 
 1. You do not want to use the
-   [LanguageTool's Public API](http://wiki.languagetool.org/public-http-api)
+   [LanguageTool's Public API](https://dev.languagetool.org/public-http-api)
 2. You're running
-   [LanguageTool HTTP Server](http://wiki.languagetool.org/http-server) on your
+   [LanguageTool HTTP Server](https://dev.languagetool.org/http-server) on your
    machine using the default port of 8081.
 
    - You can run a local LanguageTool server using the
@@ -49,7 +49,7 @@ The defaults assume the following:
      for more information.
 
 3. You do not want to have this extension manage your local
-   [LanguageTool HTTP Server](http://wiki.languagetool.org/http-server) service.
+   [LanguageTool HTTP Server](https://dev.languagetool.org/http-server) service.
 
 If this doesn't work for you, here are your options.
 
@@ -71,7 +71,7 @@ Works well if you're only using LanguageTool in Visual Studio Code.
 
 1. [Install LanguageTool](https://github.com/davidlday/vscode-languagetool-linter/wiki#installing-languagetool)
    locally.
-1. Set “LanguageTool Linter > Managed: Jar File” to the location of the
+1. Set “LanguageTool Linter > Managed: Class Path” to the location of the
    `languagetool-server.jar` file. The install doc has hints.
 1. Set “LanguageTool Linter: Service Type” to `managed`.
 
@@ -80,7 +80,7 @@ Works well if you're only using LanguageTool in Visual Studio Code.
 ### Option 3: Public API Service
 
 Make sure you read and understand
-[LanguageTool's Public API](http://wiki.languagetool.org/public-http-api) before
+[LanguageTool's Public API](https://dev.languagetool.org/public-http-api) before
 doing this.
 
 1. Set “LanguageTool Linter: Service Type” to `public`.
@@ -93,7 +93,7 @@ Most configuration items should be safe, but there are three you should pay
 particular attention to:
 
 1. _Public Api_: This will use
-   [LanguageTool's Public API](http://wiki.languagetool.org/public-http-api)
+   [LanguageTool's Public API](https://dev.languagetool.org/public-http-api)
    service. If you violate their conditions, they'll block your IP address.
 2. _Lint on Change_: This will make a call to the LanguageTool API on every
    change. If you mix this with the _Public Api_, you're more likely to violate
@@ -104,8 +104,8 @@ particular attention to:
 
 ## Ignore rules inline
 
-You have the chance to ignore specific rules inline to not bloat up your
-ignore list for single words:
+You have the chance to ignore specific rules inline to not bloat up your ignore
+list for single words:
 
     <!-- @IGNORE:UPPERCASE_SENTENCE_START@ -->
     soll heißen, dass die Nachricht von mir ist, die Koordinaten hat
@@ -113,8 +113,8 @@ ignore list for single words:
     dem irdischen
     ‚World Geodetic System 1984‘ <!-- @IGNORE:GERMAN_SPELLER_RULE(Geodetic)@ -->
 
-This example will ignore the missing capital letter at the beginning (soll → Soll)
-and an unknown word ('Geodetic')
+This example will ignore the missing capital letter at the beginning (soll →
+Soll) and an unknown word ('Geodetic')
 
 The optional match word is useful if the same rule is applied to several words
 in the sentence.

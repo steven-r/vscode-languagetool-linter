@@ -1,20 +1,100 @@
-# Change Log
+## v0.24.2 (2024-09-22)
 
-All notable changes to the “languagetool-linter” extension will be documented in
-this file.
+### Fix
 
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
-and this project adheres to
-[Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+- status bar visibilitiy (#770)
 
-## [Unreleased]
+## v0.24.1 (2024-09-22)
 
-Changes not yet released.
+### Fix
 
+- show status bar item on lint (#769)
+
+## v0.24.0 (2024-09-21)
+
+### Feat
+
+- add toggle suspend linting (#768)
+- add status bar item (#766)
+
+### Fix
+
+- remove legacy "enabled" configuration item (#767)
+- bump vscode to v1.90.0
+
+## v0.23.0 (2024-09-16)
+
+### Feat
+
+- add disable rule and category context commands (#762)
+
+## v0.22.0 (2024-09-14)
+
+### Feat
+
+- enable picky mode (#760)
+
+## v0.21.5 (2024-09-05)
+
+### Fix
+
+- **deps**: bump glob from 10.3.12 to 11.0.0 (#718)
+
+## v0.21.4 (2024-05-02)
+
+### Fix
+
+- **deps**: bump glob from 10.3.10 to 10.3.12 (#680)
+
+## v0.21.3 (2024-03-04)
+
+### Fix
+
+- **deps**: bump glob from 8.1.0 to 10.3.10 (#637)
+- correct import of glob
+
+## v0.21.2 (2024-03-03)
+
+### Fix
+
+- reset @types/vscode to 1.57.0
+
+## v0.21.1 (2024-03-03)
+
+### Fix
+
+- test stderr and stdout for null
+
+## v0.21.0 (2024-03-02)
+
+### Feat
+
+- add option to set severity levels automatically based on Rule and Categoy (#651)
+
+## v0.20.2 (2024-03-02)
+
+### Fix
+
+- **deps**: bump node-fetch and @types/node-fetch (#667)
+- **deps**: bump node-fetch and @types/node-fetch
+
+## v0.20.1 (2024-02-29)
+
+### Fix
+
+- add concurrency for publish
+- **deps**: bump node-fetch and @types/node-fetch (#596)
+
+## v0.20.0 (2023-04-02)
+
+- Premium Support by Adding Settings for username and apiKey (#438) - thank you
+  (@thomaskrause)[https://github.com/thomaskrause],
+  (@johangirod)[https://github.com/johangirod]!
 - Allow spell-check rules to be ignored by line. This Works for HTML and
-  markdown, where inline comments are allowed (e.g. pandoc)
+  markdown, where inline comments are allowed (e.g. pandoc) - thank you
+  (@steven-r)[https://github.com/steven-r]!
 
-## [0.19.0] - 2021-11-23
+## v0.19.0 (2021-11-23)
 
 ## Changed
 
@@ -24,7 +104,7 @@ Changes not yet released.
 
 - dependency updates
 
-## [0.18.0] - 2021-04-02
+## v0.18.0 (2021-04-02)
 
 ### Fixed
 
@@ -44,7 +124,7 @@ Changes not yet released.
   - Moved test fixtures to root of repo.
   - Renamed src files to match class names.
 
-## [0.17.0] - 2021-01-16
+## v0.17.0 (2021-01-16)
 
 ### Fixed
 
@@ -53,7 +133,7 @@ Changes not yet released.
 - Smart format command and on save handles apostrophes correctly
   ([216](https://github.com/davidlday/vscode-languagetool-linter/issues/216))
 
-## [0.16.0] - 2020-11-08
+## v0.16.0 (2020-11-08)
 
 ### Added
 
@@ -73,7 +153,7 @@ Changes not yet released.
 - Converted from `tslint` to `eslint`
   [#149](https://github.com/davidlday/vscode-languagetool-linter/issues/149).
 
-## [0.15.0] - 2020-06-21
+## v0.15.0 (2020-06-21)
 
 ### Added
 
@@ -101,7 +181,7 @@ Changes not yet released.
 
 - npm audit fix
 
-## [0.14.0] - 2020-05-09
+## v0.14.0 (2020-05-09)
 
 ### Fixed
 
@@ -109,20 +189,20 @@ Changes not yet released.
   diagnostic highlighting
   [#132](https://github.com/davidlday/vscode-languagetool-linter/issues/132)
 
-## [0.13.0] - 2020-05-08
+## v0.13.0 (2020-05-08)
 
 ### Fixed
 
 - Keyboard shortcuts and light bulb now working on LanguageTool problems
   [#120](https://github.com/davidlday/vscode-languagetool-linter/issues/120)
 
-## [0.12.1] - 2020-05-07
+## v0.12.1 (2020-05-07)
 
 ### Changed
 
 - Testing release via GitHub Actions
 
-## [0.12.0] - 2020-01-26
+## v0.12.0 (2020-01-26)
 
 ### Changed
 
@@ -130,7 +210,7 @@ Changes not yet released.
 - Ignored Word Configuration items specified as strings
 - Refactored constants and configuration manager
 
-## [0.11.0] - 2020-01-11
+## v0.11.0 (2020-01-11)
 
 ### Fixed
 
@@ -162,7 +242,7 @@ Changes not yet released.
 - Minimum and maximum port settings for the managed service
   [#78](https://github.com/davidlday/vscode-languagetool-linter/issues/78)
 
-## [0.10.0] - 2019-12-07
+## v0.10.0 (2019-12-07)
 
 ### Fixed
 
@@ -175,7 +255,7 @@ Changes not yet released.
 - Auto Format Enabled renamed to Smart Format on Type since it only formats
   smart characters
 
-## [0.9.1] - 2019-12-01
+## v0.9.1 (2019-12-01)
 
 ### Fixed
 
@@ -186,7 +266,7 @@ Changes not yet released.
   `PUNCTUATION_PARAGRAPH_END` Errors
 - Plaintext Annotatedtext produced correctly
 
-## [0.9.0] - 2019-11-29
+## v0.9.0 (2019-11-29)
 
 ### Added
 
@@ -196,13 +276,13 @@ Changes not yet released.
   - Ignored words have an optional hint shown to remove the word from the
     ignored list.
 
-## [0.8.1] - 2019-11-17
+## v0.8.1 (2019-11-17)
 
 ### Fixed
 
 - Corrected category on commands.
 
-## [0.8.0] - 2019-11-17
+## v0.8.0 (2019-11-17)
 
 ### Added
 
@@ -216,14 +296,14 @@ Changes not yet released.
 - Deprecated `managed.jarFile` setting in favor of `managed.classPath` to align
   with how the setting was used.
 
-## [0.7.0] - 2019-11-17
+## v0.7.0 (2019-11-17)
 
 ### Deleted
 
 - New class path setting. Extension doesn’t activate when published, but all
   tests pass.
 
-## [0.6.0] - 2019-11-17
+## v0.6.0 (2019-11-17)
 
 ### Added
 
@@ -237,7 +317,7 @@ Changes not yet released.
 - Deprecated `managed.jarFile` setting in favor of `managed.classPath` to align
   with how the setting was used.
 
-## [0.5.0] - 2019-11-15
+## v0.5.0 (2019-11-15)
 
 ### Fixed
 
@@ -249,13 +329,13 @@ Changes not yet released.
 
 - Basic tests for extension, configuration manager, and linter.
 
-## [0.4.1] - 2019-11-15
+## v0.4.1 (2019-11-15)
 
 ### Removed
 
 - All version 0.4.0 changes. Package broke on publication.
 
-## [0.4.0] - 2019-11-15
+## v0.4.0 (2019-11-15)
 
 ### Fixed
 
@@ -275,7 +355,7 @@ Changes not yet released.
 - Deprecated `managed.jarFile` setting in favor of `managed.classPath` to align
   with how the setting was used.
 
-## [0.3.2] - 2019-11-04
+## v0.3.2 (2019-11-04)
 
 ### Fixed
 
@@ -286,14 +366,14 @@ Changes not yet released.
 
 - Use regex in `autoFormatCommand` for simplicity.
 
-## [0.3.1] - 2019-10-25
+## v0.3.1 (2019-10-25)
 
 ### Fixed
 
 - Upgraded http-proxy-agent to 2.2.3.
   ([npmjs advisory 1184](https://www.npmjs.com/advisories/1184))
 
-## [0.3.0] - 2019-10-20
+## v0.3.0 (2019-10-20)
 
 ### Added
 
@@ -308,7 +388,7 @@ Changes not yet released.
 
 - Updated annotatedtext-remark to filter out front matter.
 
-## [0.2.1] - 2019-10-06
+## v0.2.1 (2019-10-06)
 
 ### Fixed
 
@@ -318,7 +398,7 @@ Changes not yet released.
   “file”. See
   [issue #9](https://github.com/davidlday/vscode-languagetool-linter/issues/9).
 
-## [0.2.0] - 2019-10-05
+## v0.2.0 (2019-10-05)
 
 ### Added
 
@@ -339,7 +419,7 @@ Changes not yet released.
   be working. Still off by default.
 - Output / errors now sent to “LanguageTool Linter” output channel.
 
-## [0.1.0] - 2019-09-28
+## v0.1.0 (2019-09-28)
 
 ### Added
 

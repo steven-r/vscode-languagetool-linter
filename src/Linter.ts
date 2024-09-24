@@ -14,6 +14,7 @@
  *   limitations under the License.
  */
 
+import { IAnnotatedtext, IAnnotation } from "annotatedtext";
 import * as RehypeBuilder from "annotatedtext-rehype";
 import * as RemarkBuilder from "./annotation-builder";
 import * as Fetch from "node-fetch";
@@ -27,6 +28,7 @@ import {
   CodeActionContext,
   CodeActionKind,
   CodeActionProvider,
+  ConfigurationTarget,
   Diagnostic,
   DiagnosticCollection,
   DiagnosticSeverity,
@@ -34,13 +36,14 @@ import {
   Position,
   Range,
   TextDocument,
+  TextEditor,
   Uri,
   window,
   workspace,
   WorkspaceEdit,
 } from "vscode";
-import * as Constants from "./Constants";
 import { ConfigurationManager } from "./ConfigurationManager";
+import * as Constants from "./Constants";
 import { FormattingProviderDashes } from "./FormattingProviderDashes";
 import { FormattingProviderEllipses } from "./FormattingProviderEllipses";
 import { FormattingProviderQuotes } from "./FormattingProviderQuotes";
@@ -49,7 +52,7 @@ import {
   ILanguageToolReplacement,
   ILanguageToolResponse,
 } from "./Interfaces";
-import { IAnnotatedtext, IAnnotation } from "annotatedtext";
+import { StatusBarManager } from "./StatusBarManager";
 import { findUpSync } from "find-up";
 
 class LTDiagnostic extends Diagnostic {
@@ -70,11 +73,20 @@ export class Linter implements CodeActionProvider {
     );
   }
 
+  public static isWarningCategory(categoryId: string): boolean {
+    return (
+      categoryId.indexOf("GRAMMAR") !== -1 ||
+      categoryId.indexOf("PUNCTUATION") !== -1 ||
+      categoryId.indexOf("TYPOGRAPHY") !== -1
+    );
+  }
+
   public diagnosticCollection: DiagnosticCollection;
   public remarkBuilderOptions: RemarkBuilder.IOptions = RemarkBuilder.defaults;
   public rehypeBuilderOptions: RehypeBuilder.IOptions = RehypeBuilder.defaults;
 
   private readonly configManager: ConfigurationManager;
+  private readonly statusBarManager: StatusBarManager;
   private timeoutMap: Map<string, NodeJS.Timeout>;
   private enabledDisabledRules: Record<string, boolean> = {};
   private enabledDisabledRulesPerLine: Record<number, Record<string, boolean>> =
@@ -97,9 +109,10 @@ export class Linter implements CodeActionProvider {
     this.remarkBuilderOptions.interpretmarkup = this.customMarkdownInterpreter;
     this.readConfigurationFiles(configManager.getConfigurationFiles());
     this.globalEnabledDisabledRules = this.enabledDisabledRules;
+    this.statusBarManager = new StatusBarManager(configManager);
   }
 
-  // Provide CodeActions for thw given Document and Range
+  // Provide CodeActions for the given Document and Range
   public provideCodeActions(
     document: TextDocument,
     _range: Range,
@@ -114,9 +127,9 @@ export class Linter implements CodeActionProvider {
           diagnostic.source === Constants.EXTENSION_DIAGNOSTIC_SOURCE,
       )
       .forEach((diagnostic) => {
-        const match:
-          | ILanguageToolMatch
-          | undefined = (diagnostic as LTDiagnostic).match;
+        const match: ILanguageToolMatch | undefined = (
+          diagnostic as LTDiagnostic
+        ).match;
         if (match && Linter.isSpellingRule(match.rule.id)) {
           const spellingActions: CodeAction[] = this.getSpellingRuleActions(
             document,
@@ -143,6 +156,44 @@ export class Linter implements CodeActionProvider {
   // Remove diagnostics for a Document URI
   public clearDiagnostics(uri: Uri): void {
     this.diagnosticCollection.delete(uri);
+  }
+
+  // Editor Changed
+  public editorChanged(editor: TextEditor | undefined, lint: boolean): void {
+    if (!editor) {
+      this.statusBarManager.hide();
+      return;
+    } else {
+      this.documentChanged(editor.document, lint);
+    }
+  }
+
+  // Document Changed
+  public documentChanged(
+    document: TextDocument | undefined,
+    lint: boolean,
+  ): void {
+    if (!document) {
+      this.statusBarManager.hide();
+      return;
+    } else {
+      if (this.configManager.isSupportedDocument(document)) {
+        this.statusBarManager.show();
+        if (lint) {
+          if (this.configManager.isHideDiagnosticsOnChange()) {
+            this.clearDiagnostics(document.uri);
+          }
+          this.requestLint(document);
+        }
+      }
+    }
+  }
+
+  // Suspend Linting
+  public toggleSuspendLinting(): boolean {
+    const suspended: boolean = this.configManager.toggleSuspendLinting();
+    this.statusBarManager.refreshToolTip();
+    return suspended;
   }
 
   // Request a lint for a document
@@ -182,6 +233,7 @@ export class Linter implements CodeActionProvider {
         ) as NodeJS.Timeout;
         clearTimeout(timeout);
         this.timeoutMap.delete(uriString);
+        this.statusBarManager.setIdle();
       }
     }
   }
@@ -244,6 +296,7 @@ export class Linter implements CodeActionProvider {
       } else {
         this.lintDocumentAsPlainText(document);
       }
+      this.statusBarManager.show();
     }
   }
 
@@ -260,9 +313,11 @@ export class Linter implements CodeActionProvider {
     document: TextDocument,
     annotatedText: string,
   ): void {
+    this.statusBarManager.setChecking();
     const ltPostDataDict: Record<string, string> = this.getPostDataTemplate();
     ltPostDataDict.data = annotatedText;
     this.callLanguageTool(document, ltPostDataDict);
+    this.statusBarManager.setIdle();
   }
 
   // Apply smart formatting to annotated text.
@@ -360,7 +415,10 @@ export class Linter implements CodeActionProvider {
       };
       Fetch.default(url, options)
         .then((res) => res.json())
-        .then((json) => this.suggest(document, json))
+        .then((json: ILanguageToolResponse) => {
+          this.statusBarManager.setLtSoftware(json.software);
+          this.suggest(document, json);
+        })
         .catch((err) => {
           Constants.EXTENSION_OUTPUT_CHANNEL.appendLine(
             "Error connecting to " + url,
@@ -380,6 +438,7 @@ export class Linter implements CodeActionProvider {
     document: TextDocument,
     response: ILanguageToolResponse,
   ): void {
+    this.statusBarManager.setLtSoftware(response.software);
     const matches = response.matches;
     const diagnostics: LTDiagnostic[] = [];
     this.buildRuleList(document);
@@ -387,7 +446,10 @@ export class Linter implements CodeActionProvider {
       const start: Position = document.positionAt(match.offset);
       const end: Position = document.positionAt(match.offset + match.length);
       const diagnosticSeverity: DiagnosticSeverity =
+       
         this.configManager.getDiagnosticSeverity();
+      const diagnosticSeverityAuto: boolean =
+        this.configManager.getDiagnosticSeverityAuto();
       const diagnosticRange: Range = new Range(start, end);
       const diagnosticMessage: string = match.message;
       const diagnostic: LTDiagnostic = new LTDiagnostic(
@@ -410,6 +472,13 @@ export class Linter implements CodeActionProvider {
         };
       }
       diagnostics.push(diagnostic);
+      if (diagnosticSeverityAuto) {
+        if (Linter.isSpellingRule(match.rule.id)) {
+          diagnostic.severity = DiagnosticSeverity.Error;
+        } else if (Linter.isWarningCategory(match.rule.category.id)) {
+          diagnostic.severity = DiagnosticSeverity.Warning;
+        }
+      }
       const word = document.getText(diagnostic.range);
       if (
         (Linter.isSpellingRule(match.rule.id) &&
@@ -567,6 +636,13 @@ export class Linter implements CodeActionProvider {
       ).forEach((action: CodeAction) => {
         actions.push(action);
       });
+      if (match.rule) {
+        this.getDisableActions(document, diagnostic).forEach(
+          (action: CodeAction) => {
+            actions.push(action);
+          },
+        );
+      }
     }
     return actions;
   }
@@ -591,6 +667,85 @@ export class Linter implements CodeActionProvider {
       action.diagnostics.push(diagnostic);
       actions.push(action);
     });
+    return actions;
+  }
+
+  // Get all disable CodeActions based on Rules and Categories
+  private getDisableActions(
+    document: TextDocument,
+    diagnostic: LTDiagnostic,
+  ): CodeAction[] {
+    const actions: CodeAction[] = [];
+    const rule: ILanguageToolMatch["rule"] | undefined = diagnostic.match?.rule;
+    if (rule) {
+      if (rule.id) {
+        const usrDisableRuleTitle: string =
+          "Disable '" + rule.description + "' (" + rule.id + ") Globally";
+        const usrDisableRuleAction: CodeAction = new CodeAction(
+          usrDisableRuleTitle,
+          CodeActionKind.QuickFix,
+        );
+        usrDisableRuleAction.command = {
+          arguments: [rule.id, ConfigurationTarget.Global],
+          command: "languagetoolLinter.disableRule",
+          title: usrDisableRuleTitle,
+        };
+        usrDisableRuleAction.diagnostics = [];
+        usrDisableRuleAction.diagnostics.push(diagnostic);
+        actions.push(usrDisableRuleAction);
+
+        if (workspace !== undefined) {
+          const wsDisableRuleTitle: string =
+            "Disable '" + rule.description + "' (" + rule.id + ") in Workspace";
+          const wsDisableRuleAction: CodeAction = new CodeAction(
+            wsDisableRuleTitle,
+            CodeActionKind.QuickFix,
+          );
+          wsDisableRuleAction.command = {
+            arguments: [rule.id, ConfigurationTarget.Workspace],
+            command: "languagetoolLinter.disableRule",
+            title: wsDisableRuleTitle,
+          };
+          wsDisableRuleAction.diagnostics = [];
+          wsDisableRuleAction.diagnostics.push(diagnostic);
+          actions.push(wsDisableRuleAction);
+        }
+      }
+      if (rule.category) {
+        const usrDisableCategoryTitle: string =
+          "Disable '" + rule.category.name + "' Globally";
+        const usrDisableCategoryAction: CodeAction = new CodeAction(
+          usrDisableCategoryTitle,
+          CodeActionKind.QuickFix,
+        );
+        usrDisableCategoryAction.command = {
+          arguments: [rule.category.id, ConfigurationTarget.Global],
+          command: "languagetoolLinter.disableCategory",
+          title: usrDisableCategoryTitle,
+        };
+        usrDisableCategoryAction.diagnostics = [];
+        usrDisableCategoryAction.diagnostics.push(diagnostic);
+        actions.push(usrDisableCategoryAction);
+
+        if (workspace !== undefined) {
+          const wsDisableCategoryTitle: string =
+            "Disable '" + rule.category.name + "' in Workspace";
+          const wsDisableCategoryAction: CodeAction = new CodeAction(
+            wsDisableCategoryTitle,
+            CodeActionKind.QuickFix,
+          );
+          wsDisableCategoryAction.command = {
+            arguments: [rule.id, ConfigurationTarget.Workspace],
+            command: "languagetoolLinter.disableCategory",
+            title: wsDisableCategoryTitle,
+          };
+          wsDisableCategoryAction.diagnostics = [];
+          wsDisableCategoryAction.diagnostics.push(diagnostic);
+          actions.push(wsDisableCategoryAction);
+        }
+      }
+    }
+
     return actions;
   }
 

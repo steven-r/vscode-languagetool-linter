@@ -11,7 +11,7 @@ jobs:
     steps:
       - name: Dependabot metadata
         id: metadata
-        uses: dependabot/fetch-metadata@v1.1.1
+        uses: dependabot/fetch-metadata@v2.2.0
         with:
           github-token: "${{ secrets.GITHUB_TOKEN }}"
       - name: Approve a PR
@@ -21,7 +21,7 @@ jobs:
           GITHUB_TOKEN: ${{secrets.GITHUB_TOKEN}}
   davidlday:
     runs-on: ubuntu-latest
-    if: ${{ github.actor == 'davidlday' }}
+    if: ${{ github.event.pull_request.user.login == 'davidlday'}}
     steps:
       - name: Approve a PR
         run: gh pr review --approve "$PR_URL"
