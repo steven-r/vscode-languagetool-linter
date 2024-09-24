@@ -501,11 +501,11 @@ export class ConfigurationManager implements Disposable {
                   }
                 },
               );
-              this.process.stderr.addListener("data", (data) => {
+              this.process.stderr!.addListener("data", (data) => {
                 Constants.EXTENSION_OUTPUT_CHANNEL.appendLine(data);
                 Constants.EXTENSION_OUTPUT_CHANNEL.show(true);
               });
-              this.process.stdout.addListener("data", (data) => {
+              this.process.stdout!.addListener("data", (data) => {
                 Constants.EXTENSION_OUTPUT_CHANNEL.appendLine(data);
               });
               this.serviceUrl = this.findServiceUrl(this.getServiceType());
