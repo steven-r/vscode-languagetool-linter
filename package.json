@@ -552,7 +552,7 @@
     "execa": "^5.0.0",
     "find-up": "^6.3.0",
     "glob": "^11.0.0",
-    "node-fetch": "^2.7.0",
+    "node-fetch": "^3.0.0",
     "portfinder": "^1.0.32",
     "remark-directive": "^2.0.1",
     "remark-frontmatter": "^4.0.1",
